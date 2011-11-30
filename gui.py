@@ -198,8 +198,8 @@ class MainWnd(QWidget):
 		lt_panel.addWidget(self.sta_g)
 		lt_panel.addWidget(self.goal_g)
 		lt_panel.addWidget(self.srch_path_g)
-		lt_panel.addWidget(self.next_sta_g)
 		lt_panel.addWidget(self.prev_sta_g)
+		lt_panel.addWidget(self.next_sta_g)
 		lt_panel.addWidget(self.text_g)
 
 		lt_main = QHBoxLayout()
