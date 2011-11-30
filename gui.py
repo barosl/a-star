@@ -5,10 +5,12 @@ from PySide.QtCore import *
 import sys
 from a_star import srch_path, State
 import thread
+import re
 
 PUZZLE_SIZE = 4
 CELL_W = CELL_H = 50
 CELL_LINE_STEP = 10
+INPUT_FPATH = 'input.txt'
 
 class StateWnd(QWidget):
 	def __init__(self, parent, p_size, cell_w=CELL_W, cell_h=CELL_H):
@@ -19,6 +21,7 @@ class StateWnd(QWidget):
 		self.cell_h = cell_h
 
 		self.st = None
+		self.path_pts = None
 
 		self.setMinimumSize(self.cell_w*self.p_size, self.cell_h*self.p_size)
 		self.show()
@@ -43,8 +46,26 @@ class StateWnd(QWidget):
 
 			pa.drawText(x*self.cell_w, y*self.cell_h, self.cell_w, self.cell_h, Qt.AlignCenter, unicode(cell))
 
+		self.draw_path_pts(pa)
+
+	def draw_path_pts(self, pa):
+		if not self.path_pts: return
+
+		pa.setPen(QPen(QBrush(QColor(255, 0, 0)), 3))
+
+		prev_x, prev_y = -1, -1
+		for x, y in self.path_pts:
+			if prev_x != -1:
+				pa.drawLine(prev_x, prev_y, x, y)
+
+			prev_x, prev_y = x, y
+
 	def set_st(self, st):
 		self.st = st
+		self.update()
+
+	def set_path_pts(self, path_pts):
+		self.path_pts = path_pts
 		self.update()
 
 class ResultWnd(QWidget):
@@ -58,9 +79,27 @@ class ResultWnd(QWidget):
 		self.path_pts = []
 
 		self.state_g = StateWnd(self, p_size)
-		self.state_g.move(0, 0)
+		self.prev_st_g = QPushButton(u'&Previous State', self)
+		self.next_st_g = QPushButton(u'&Next State', self)
+		self.text_g = QLabel(self)
 
-		self.setMinimumSize(CELL_W*self.p_size, CELL_H*self.p_size)
+		self.prev_st_g.clicked.connect(self.on_prev_st)
+		self.next_st_g.clicked.connect(self.on_next_st)
+
+		self.update_text()
+
+		lt_res_butts = QHBoxLayout()
+		lt_res_butts.addWidget(self.prev_st_g)
+		lt_res_butts.addWidget(self.next_st_g)
+
+		lt_main = QVBoxLayout()
+		lt_main.addWidget(self.state_g)
+		lt_main.addLayout(lt_res_butts)
+		lt_main.addWidget(self.text_g)
+		lt_main.setAlignment(Qt.AlignTop)
+
+		self.setLayout(lt_main)
+
 		self.show()
 
 	def set_st(self, st):
@@ -70,11 +109,11 @@ class ResultWnd(QWidget):
 			self.sts.append(st)
 		add_path(st)
 
-		self.calc_path_pts()
-
 		self.set_st_idx(0)
 
-	def calc_path_pts(self):
+		self.state_g.set_path_pts(self.get_path_pts())
+
+	def get_path_pts(self):
 		path_pts = []
 
 		x_used = {}
@@ -111,7 +150,7 @@ class ResultWnd(QWidget):
 			prev_x, prev_y = x, y
 			prev_pt_x, prev_pt_y = pt_x, pt_y
 
-		self.path_pts = path_pts
+		return path_pts
 
 	def set_st_idx(self, idx):
 		if idx < 0 or idx >= len(self.sts): return
@@ -119,81 +158,107 @@ class ResultWnd(QWidget):
 		self.state_g.set_st(self.sts[idx])
 		self.st_idx = idx
 
-	def paintEvent(self, ev):
-		pa = QPainter(self)
+		self.update_text()
 
-		if not self.sts: return
+	def on_prev_st(self):
+		self.set_st_idx(self.st_idx-1)
 
-		pa.setPen(QPen(QBrush(QColor(255, 0, 0)), 3))
+	def on_next_st(self):
+		self.set_st_idx(self.st_idx+1)
 
-		prev_x, prev_y = -1, -1
-		for x, y in self.path_pts:
-			if prev_x != -1:
-				pa.drawLine(prev_x, prev_y, x, y)
-
-			prev_x, prev_y = x, y
+	def update_text(self):
+		depth_s = str(len(self.sts)-1) if self.sts else '?'
+		st_idx_s = '%d of %d' % (self.st_idx+1, len(self.sts)) if self.sts else '?'
+		self.text_g.setText(u'Depth: %s\nState: %s' % (depth_s, st_idx_s))
 
 class MainWnd(QWidget):
 	def __init__(self):
 		super(MainWnd, self).__init__()
 
+		self.stas = []
+		self.sta_idx = -1
+
 		self.res_g = ResultWnd(self, PUZZLE_SIZE)
-		self.prev_g = QPushButton(u'&Previous', self)
-		self.next_g = QPushButton(u'&Next', self)
 		self.sta_g = StateWnd(self, PUZZLE_SIZE, CELL_W/2, CELL_H/2)
 		self.goal_g = StateWnd(self, PUZZLE_SIZE, CELL_W/2, CELL_H/2)
-		self.srch_g = QPushButton(u'&Search', self)
+		self.srch_path_g = QPushButton(u'&Search Path', self)
+		self.prev_sta_g = QPushButton(u'&Previous Start', self)
+		self.next_sta_g = QPushButton(u'&Next Start', self)
+		self.text_g = QLabel(self)
 
-		self.goal_g.set_st(State(range(1, PUZZLE_SIZE*PUZZLE_SIZE)+[0], None, None))
-		self.sta_g.set_st(State([int(x) for x in open("input.txt").readline().split()], None, self.goal_g.st))
+		self.srch_path_g.clicked.connect(self.on_srch_path)
+		self.srch_path_g.setFocus()
+		self.srch_path_done.connect(self.on_srch_path_done)
+		self.prev_sta_g.clicked.connect(self.on_prev_sta)
+		self.next_sta_g.clicked.connect(self.on_next_sta)
 
-		self.srch_g.clicked.connect(self.on_srch)
-		self.srch_g.setFocus()
-		self.prev_g.clicked.connect(self.on_prev)
-		self.next_g.clicked.connect(self.on_next)
-		self.srch_done.connect(self.on_srch_done)
-
-		lt_res_butts = QHBoxLayout()
-		lt_res_butts.addWidget(self.prev_g)
-		lt_res_butts.addWidget(self.next_g)
-
-		lt_res = QVBoxLayout()
-		lt_res.addWidget(self.res_g)
-		lt_res.addLayout(lt_res_butts)
+		self.update_text()
 
 		lt_panel = QVBoxLayout()
 		lt_panel.addWidget(self.sta_g)
 		lt_panel.addWidget(self.goal_g)
-		lt_panel.addWidget(self.srch_g)
+		lt_panel.addWidget(self.srch_path_g)
+		lt_panel.addWidget(self.next_sta_g)
+		lt_panel.addWidget(self.prev_sta_g)
+		lt_panel.addWidget(self.text_g)
 
 		lt_main = QHBoxLayout()
-		lt_main.addLayout(lt_res)
+		lt_main.addWidget(self.res_g)
 		lt_main.addLayout(lt_panel)
 
 		self.setLayout(lt_main)
 
+		self.goal_g.set_st(State(range(1, PUZZLE_SIZE*PUZZLE_SIZE)+[0], None, None))
+		self.load_stas()
+
+		self.setWindowTitle(u'A* algorithm')
 		self.show()
 
-	def on_srch(self):
+	def on_srch_path(self):
 		def thrd():
 			st = srch_path(self.sta_g.st, self.goal_g.st)
-			self.srch_done.emit(st)
+			self.srch_path_done.emit(st)
 
 		thread.start_new_thread(thrd, ())
 
-	srch_done = Signal(object)
-	def on_srch_done(self, st):
+	srch_path_done = Signal(object)
+	def on_srch_path_done(self, st):
 		if not st:
 			QMessageBox.critical(self, None, u'Path not found.')
 			return
 
 		self.res_g.set_st(st)
 
-	def on_prev(self):
-		self.res_g.set_st_idx(self.res_g.st_idx-1)
+	def load_stas(self):
+		stas = []
 
-	def on_next(self):
-		self.res_g.set_st_idx(self.res_g.st_idx+1)
+		for line in open(INPUT_FPATH).read().splitlines():
+			cells = [int(x) for x in re.findall('[0-9]+', line)[:PUZZLE_SIZE*PUZZLE_SIZE]]
+			assert len(cells) == PUZZLE_SIZE*PUZZLE_SIZE
+
+			stas.append(State(cells, None, self.goal_g.st))
+
+		self.stas = stas
+
+		if self.stas: self.set_sta_idx(0)
+
+	def set_sta_idx(self, sta_idx):
+		if sta_idx < 0 or sta_idx >= len(self.stas): return
+
+		self.sta_g.set_st(self.stas[sta_idx])
+		self.sta_idx = sta_idx
+
+		self.update_text()
+
+	def on_prev_sta(self):
+		self.set_sta_idx(self.sta_idx-1)
+
+	def on_next_sta(self):
+		self.set_sta_idx(self.sta_idx+1)
+
+	def update_text(self):
+		sta_idx_s = '%d of %d' % (self.sta_idx+1, len(self.stas)) if self.stas else '?'
+		self.text_g.setText(u'Start node: %s' % sta_idx_s)
 
 def main():
 	app = QApplication(sys.argv)
