@@ -8,6 +8,7 @@ import thread
 
 PUZZLE_SIZE = 4
 CELL_W = CELL_H = 50
+CELL_LINE_STEP = 10
 
 class StateWnd(QWidget):
 	def __init__(self, parent, p_size, cell_w=CELL_W, cell_h=CELL_H):
@@ -54,7 +55,7 @@ class ResultWnd(QWidget):
 
 		self.sts = []
 		self.st_idx = -1
-		self.p_lines = []
+		self.path_pts = []
 
 		self.state_g = StateWnd(self, p_size)
 		self.state_g.move(0, 0)
@@ -69,13 +70,68 @@ class ResultWnd(QWidget):
 			self.sts.append(st)
 		add_path(st)
 
+		self.calc_path_pts()
+
 		self.set_st_idx(0)
+
+	def calc_path_pts(self):
+		path_pts = []
+
+		x_used = {}
+		y_used = {}
+
+		prev_x, prev_y = -1, -1
+		prev_pt_x, prev_pt_y = -1, -1
+		for st in self.sts:
+			x = st.empty_pos % self.p_size
+			y = st.empty_pos / self.p_size
+
+			pt_x = x*CELL_W + CELL_W/2
+			pt_y = y*CELL_H + CELL_H/2
+
+			if prev_x != -1:
+				if prev_x == x:
+					pt_x = prev_pt_x
+
+					for delta in xrange(0, CELL_H/2, CELL_LINE_STEP):
+						if pt_y - delta not in y_used: pt_y -= delta; break
+						if pt_y + delta not in y_used: pt_y += delta; break
+				else:
+					pt_y = prev_pt_y
+
+					for delta in xrange(0, CELL_W/2, CELL_LINE_STEP):
+						if pt_x - delta not in x_used: pt_x -= delta; break
+						if pt_x + delta not in x_used: pt_x += delta; break
+
+			x_used[pt_x] = None
+			y_used[pt_y] = None
+
+			path_pts.append([pt_x, pt_y])
+
+			prev_x, prev_y = x, y
+			prev_pt_x, prev_pt_y = pt_x, pt_y
+
+		self.path_pts = path_pts
 
 	def set_st_idx(self, idx):
 		if idx < 0 or idx >= len(self.sts): return
 
 		self.state_g.set_st(self.sts[idx])
 		self.st_idx = idx
+
+	def paintEvent(self, ev):
+		pa = QPainter(self)
+
+		if not self.sts: return
+
+		pa.setPen(QPen(QBrush(QColor(255, 0, 0)), 3))
+
+		prev_x, prev_y = -1, -1
+		for x, y in self.path_pts:
+			if prev_x != -1:
+				pa.drawLine(prev_x, prev_y, x, y)
+
+			prev_x, prev_y = x, y
 
 class MainWnd(QWidget):
 	def __init__(self):
@@ -89,7 +145,7 @@ class MainWnd(QWidget):
 		self.srch_g = QPushButton(u'&Search', self)
 
 		self.goal_g.set_st(State(range(1, PUZZLE_SIZE*PUZZLE_SIZE)+[0], None, None))
-		self.sta_g.set_st(State([1, 3, 4, 8, 5, 2, 7, 12, 9, 6, 11, 15, 13, 0, 10, 14], None, self.goal_g.st))
+		self.sta_g.set_st(State([int(x) for x in open("input.txt").readline().split()], None, self.goal_g.st))
 
 		self.srch_g.clicked.connect(self.on_srch)
 		self.srch_g.setFocus()
