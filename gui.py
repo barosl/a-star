@@ -175,15 +175,15 @@ class MainWnd(QWidget):
 	def __init__(self):
 		super(MainWnd, self).__init__()
 
-		self.stas = []
-		self.sta_idx = -1
+		self.inps = []
+		self.inp_idx = -1
 
 		self.res_g = ResultWnd(self, PUZZLE_SIZE)
 		self.sta_g = StateWnd(self, PUZZLE_SIZE, CELL_W/2, CELL_H/2)
 		self.goal_g = StateWnd(self, PUZZLE_SIZE, CELL_W/2, CELL_H/2)
 		self.srch_path_g = QPushButton(u'&Search Path', self)
-		self.prev_sta_g = QPushButton(u'&Previous Start', self)
-		self.next_sta_g = QPushButton(u'&Next Start', self)
+		self.prev_sta_g = QPushButton(u'&Previous Input', self)
+		self.next_sta_g = QPushButton(u'&Next Input', self)
 		self.text_g = QLabel(self)
 
 		self.srch_path_g.clicked.connect(self.on_srch_path)
@@ -208,8 +208,7 @@ class MainWnd(QWidget):
 
 		self.setLayout(lt_main)
 
-		self.goal_g.set_st(State(range(1, PUZZLE_SIZE*PUZZLE_SIZE)+[0], None, None))
-		self.load_stas()
+		self.load_inps()
 
 		self.setWindowTitle(u'A* algorithm')
 		self.show()
@@ -229,36 +228,46 @@ class MainWnd(QWidget):
 
 		self.res_g.set_st(st)
 
-	def load_stas(self):
-		stas = []
+	def load_inps(self):
+		inps = []
+
+		prev_cells = None
 
 		for line in open(INPUT_FPATH).read().splitlines():
-			cells = [int(x) for x in re.findall('[0-9]+', line)[:PUZZLE_SIZE*PUZZLE_SIZE]]
-			assert len(cells) == PUZZLE_SIZE*PUZZLE_SIZE
+			cells = [int(x) for x in re.findall('[0-9]+', line)]
+			if len(cells) != PUZZLE_SIZE*PUZZLE_SIZE: continue
 
-			stas.append(State(cells, None, self.goal_g.st))
+			if prev_cells:
+				goal = State(cells, None, None)
+				sta = State(prev_cells, None, goal)
+				inps.append((sta, goal))
 
-		self.stas = stas
+				prev_cells = None
+			else:
+				prev_cells = cells
 
-		if self.stas: self.set_sta_idx(0)
+		self.inps = inps
 
-	def set_sta_idx(self, sta_idx):
-		if sta_idx < 0 or sta_idx >= len(self.stas): return
+		if self.inps: self.set_inp_idx(0)
 
-		self.sta_g.set_st(self.stas[sta_idx])
-		self.sta_idx = sta_idx
+	def set_inp_idx(self, inp_idx):
+		if inp_idx < 0 or inp_idx >= len(self.inps): return
+
+		self.sta_g.set_st(self.inps[inp_idx][0])
+		self.goal_g.set_st(self.inps[inp_idx][1])
+		self.inp_idx = inp_idx
 
 		self.update_text()
 
 	def on_prev_sta(self):
-		self.set_sta_idx(self.sta_idx-1)
+		self.set_inp_idx(self.inp_idx-1)
 
 	def on_next_sta(self):
-		self.set_sta_idx(self.sta_idx+1)
+		self.set_inp_idx(self.inp_idx+1)
 
 	def update_text(self):
-		sta_idx_s = '%d of %d' % (self.sta_idx+1, len(self.stas)) if self.stas else '?'
-		self.text_g.setText(u'Start node: %s' % sta_idx_s)
+		inp_idx_s = '%d of %d' % (self.inp_idx+1, len(self.inps)) if self.inps else '?'
+		self.text_g.setText(u'Start node: %s' % inp_idx_s)
 
 def main():
 	app = QApplication(sys.argv)
